@@ -44,7 +44,7 @@ export type Repositories = {
 /** Response(first) of GraphQL */
 export type ResponseType = {
     data?: {
-        user: {
+        viewer: {
             contributionsCollection: {
                 commitContributionsByRepository: CommitContributionsByRepository;
                 contributionCalendar: ContributionCalendar;
@@ -68,7 +68,7 @@ export type ResponseType = {
 /** Response(next) of GraphQL */
 export type ResponseNextType = {
     data?: {
-        user: {
+        viewer: {
             repositories: Repositories;
         };
     };
@@ -93,8 +93,8 @@ export const fetchFirst = async (
     };
     const request = {
         query: `
-            query($login: String!) {
-                user(login: $login) {
+            query {
+                viewer {
                     contributionsCollection${yearArgs} {
                         contributionCalendar {
                             isHalloween
@@ -136,7 +136,7 @@ export const fetchFirst = async (
                 }
             }
         `.replace(/\s+/g, ' '),
-        variables: { login: userName },
+        variables: {},
     };
 
     const response = await axios.post<ResponseType>(URL, request, {
@@ -155,8 +155,8 @@ export const fetchNext = async (
     };
     const request = {
         query: `
-            query($login: String!, $cursor: String!) {
-                user(login: $login) {
+            query($cursor: String!) {
+                viewer {
                     repositories(after: $cursor, first: ${maxReposOneQuery}, ownerAffiliations: OWNER) {
                         edges {
                             cursor
@@ -170,7 +170,6 @@ export const fetchNext = async (
             }
         `.replace(/\s+/g, ' '),
         variables: {
-            login: userName,
             cursor: cursor,
         },
     };
@@ -190,13 +189,13 @@ export const fetchData = async (
     const res1 = await fetchFirst(token, userName, year);
     const result = res1.data;
 
-    if (result && result.user.repositories.nodes.length === maxReposOneQuery) {
-        const repos1 = result.user.repositories;
+    if (result && result.viewer.repositories.nodes.length === maxReposOneQuery) {
+        const repos1 = result.viewer.repositories;
         let cursor = repos1.edges[repos1.edges.length - 1].cursor;
         while (repos1.nodes.length < maxRepos) {
             const res2 = await fetchNext(token, userName, cursor);
             if (res2.data) {
-                const repos2 = res2.data.user.repositories;
+                const repos2 = res2.data.viewer.repositories;
                 repos1.nodes.push(...repos2.nodes);
                 if (repos2.nodes.length !== maxReposOneQuery) {
                     break;
