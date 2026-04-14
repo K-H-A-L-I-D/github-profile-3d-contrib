@@ -42,9 +42,12 @@ export const main = async (): Promise<void> => {
             : await client.fetchData(token, userName, maxRepos, year);
 
         if (allTimeLangs && !allTime && response.data) {
-            const langs = await client.fetchAllYearsLanguages(token, userName);
+            const { languages, totalContributions } =
+                await client.fetchAllYearsLanguages(token, userName);
             response.data.viewer.contributionsCollection.commitContributionsByRepository =
-                langs;
+                languages;
+            response.data.viewer.contributionsCollection.contributionCalendar.totalContributions =
+                totalContributions;
         }
         const userInfo = aggregate.aggregateUserInfo(response);
 
