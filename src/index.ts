@@ -34,13 +34,11 @@ export const main = async (): Promise<void> => {
             process.exitCode = 1;
             return;
         }
+        const allTime = process.env.ALL_TIME === 'true';
 
-        const response = await client.fetchData(
-            token,
-            userName,
-            maxRepos,
-            year,
-        );
+        const response = allTime
+            ? await client.fetchAllYearsData(token, userName, maxRepos)
+            : await client.fetchData(token, userName, maxRepos, year);
         const userInfo = aggregate.aggregateUserInfo(response);
 
         if (process.env.SETTING_JSON) {

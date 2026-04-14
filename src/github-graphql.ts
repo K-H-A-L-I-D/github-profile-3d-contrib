@@ -187,6 +187,85 @@ export const fetchNext = async (
     return response.data;
 };
 
+/** Fetch the year the authenticated user created their account */
+export const fetchCreatedYear = async (token: string): Promise<number> => {
+    const headers = { Authorization: `bearer ${token}` };
+    const request = {
+        query: `query { viewer { createdAt } }`,
+    };
+    const response = await axios.post<{
+        data?: { viewer: { createdAt: string } };
+    }>(URL, request, { headers });
+    const createdAt = response.data.data?.viewer.createdAt;
+    if (!createdAt) throw new Error('Could not fetch account creation date');
+    return new Date(createdAt).getFullYear();
+};
+
+/** Merge multiple per-year responses into a single ResponseType */
+const mergeResponses = (responses: ResponseType[]): ResponseType => {
+    const valid = responses.filter((r) => r.data);
+    if (valid.length === 0) return responses[0];
+
+    // Deep-clone base so we mutate safely
+    const base = JSON.parse(
+        JSON.stringify(valid[0].data!.viewer),
+    ) as ResponseType['data'] extends undefined ? never : NonNullable<ResponseType['data']>['viewer'];
+
+    for (let i = 1; i < valid.length; i++) {
+        const v = valid[i].data!.viewer;
+        const cal = base.contributionsCollection.contributionCalendar;
+        const vcal = v.contributionsCollection.contributionCalendar;
+
+        cal.weeks.push(...vcal.weeks);
+        cal.totalContributions += vcal.totalContributions;
+
+        const c = base.contributionsCollection;
+        const vc = v.contributionsCollection;
+        c.totalCommitContributions += vc.totalCommitContributions;
+        c.totalIssueContributions += vc.totalIssueContributions;
+        c.totalPullRequestContributions += vc.totalPullRequestContributions;
+        c.totalPullRequestReviewContributions +=
+            vc.totalPullRequestReviewContributions;
+        c.totalRepositoryContributions += vc.totalRepositoryContributions;
+
+        // Append repo language entries — aggregated by language downstream
+        c.commitContributionsByRepository.push(
+            ...vc.commitContributionsByRepository,
+        );
+    }
+
+    return { data: { viewer: base } };
+};
+
+/**
+ * Fetch all contributions from account creation to today by querying
+ * one calendar year at a time and merging the results.
+ */
+export const fetchAllYearsData = async (
+    token: string,
+    userName: string,
+    maxRepos: number,
+): Promise<ResponseType> => {
+    const startYear = await fetchCreatedYear(token);
+    const currentYear = new Date().getFullYear();
+
+    const responses: ResponseType[] = [];
+    for (let year = startYear; year <= currentYear; year++) {
+        const res = await fetchFirst(token, userName, year);
+        responses.push(res);
+    }
+
+    const merged = mergeResponses(responses);
+
+    // Replace repositories with paginated result from current period
+    const reposRes = await fetchData(token, userName, maxRepos, null);
+    if (merged.data && reposRes.data) {
+        merged.data.viewer.repositories = reposRes.data.viewer.repositories;
+    }
+
+    return merged;
+};
+
 /** Fetch data from GitHub GraphQL */
 export const fetchData = async (
     token: string,
