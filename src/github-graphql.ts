@@ -85,9 +85,17 @@ export const fetchFirst = async (
     userName: string,
     year: number | null = null,
 ): Promise<ResponseType> => {
-    const yearArgs = year
-        ? `(from:"${year}-01-01T00:00:00.000Z", to:"${year}-12-31T23:59:59.000Z")`
-        : '';
+    let yearArgs: string;
+    if (year !== null) {
+        yearArgs = `(from:"${year}-01-01T00:00:00.000Z", to:"${year}-12-31T23:59:59.000Z")`;
+    } else {
+        // Default to a rolling 12-month window so all recent contributions
+        // are included regardless of calendar year boundaries.
+        const to = new Date();
+        const from = new Date(to);
+        from.setFullYear(from.getFullYear() - 1);
+        yearArgs = `(from:"${from.toISOString()}", to:"${to.toISOString()}")`;
+    }
     const headers = {
         Authorization: `bearer ${token}`,
     };
