@@ -35,10 +35,17 @@ export const main = async (): Promise<void> => {
             return;
         }
         const allTime = process.env.ALL_TIME === 'true';
+        const allTimeLangs = process.env.ALL_TIME_LANGS === 'true';
 
         const response = allTime
             ? await client.fetchAllYearsData(token, userName, maxRepos)
             : await client.fetchData(token, userName, maxRepos, year);
+
+        if (allTimeLangs && !allTime && response.data) {
+            const langs = await client.fetchAllYearsLanguages(token, userName);
+            response.data.viewer.contributionsCollection.commitContributionsByRepository =
+                langs;
+        }
         const userInfo = aggregate.aggregateUserInfo(response);
 
         if (process.env.SETTING_JSON) {

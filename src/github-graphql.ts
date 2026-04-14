@@ -266,6 +266,31 @@ export const fetchAllYearsData = async (
     return merged;
 };
 
+/**
+ * Fetch commit-to-repository language data across all years from account
+ * creation to today. The calendar data is intentionally excluded so this
+ * can be overlaid onto a single-year response without bloating the SVG.
+ */
+export const fetchAllYearsLanguages = async (
+    token: string,
+    userName: string,
+): Promise<CommitContributionsByRepository> => {
+    const startYear = await fetchCreatedYear(token);
+    const currentYear = new Date().getFullYear();
+
+    const allRepos: CommitContributionsByRepository = [];
+    for (let year = startYear; year <= currentYear; year++) {
+        const res = await fetchFirst(token, userName, year);
+        if (res.data) {
+            allRepos.push(
+                ...res.data.viewer.contributionsCollection
+                    .commitContributionsByRepository,
+            );
+        }
+    }
+    return allRepos;
+};
+
 /** Fetch data from GitHub GraphQL */
 export const fetchData = async (
     token: string,
