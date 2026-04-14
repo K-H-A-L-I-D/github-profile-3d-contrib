@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import * as type from './type';
 
 export const URL =
@@ -275,22 +275,14 @@ export const fetchAllYearsData = async (
 export const fetchAllYearsLanguages = async (
     token: string,
     userName: string,
-): Promise<{
-    languages: CommitContributionsByRepository;
-    totalContributions: number;
-}> => {
+): Promise<{ totalContributions: number }> => {
     const startYear = await fetchCreatedYear(token);
     const currentYear = new Date().getFullYear();
 
-    const allRepos: CommitContributionsByRepository = [];
     let totalContributions = 0;
     for (let year = startYear; year <= currentYear; year++) {
         const res = await fetchFirst(token, userName, year);
         if (res.data) {
-            allRepos.push(
-                ...res.data.viewer.contributionsCollection
-                    .commitContributionsByRepository,
-            );
             totalContributions +=
                 res.data.viewer.contributionsCollection.contributionCalendar
                     .totalContributions;
@@ -298,6 +290,60 @@ export const fetchAllYearsLanguages = async (
     }
     return { totalContributions };
 };
+
+type RepoLanguagesPage = {
+    pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+    };
+    nodes: Array<{
+        languages: {
+            edges: Array<{
+                size: number;
+                node: {
+                    name: string;
+                    color: string | null;
+                };
+            }>;
+        };
+    }>;
+};
+
+type RepoLanguagesResponse = {
+    data?: {
+        viewer: {
+            repositories: RepoLanguagesPage;
+        };
+    };
+};
+
+const repoLanguagesQuery = `
+    query($cursor: String) {
+        viewer {
+            repositories(
+                first: 100,
+                after: $cursor,
+                ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+            ) {
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
+                nodes {
+                    languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                        edges {
+                            size
+                            node {
+                                name
+                                color
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+`.replace(/\s+/g, ' ');
 
 /**
  * Fetch language byte counts across all repos the viewer owns, collaborates
@@ -312,64 +358,18 @@ export const fetchRepoLanguages = async (
     const headers = { Authorization: `bearer ${token}` };
     const results: CommitContributionsByRepository = [];
     let cursor: string | null = null;
+    let hasNextPage = true;
 
-    do {
-        const request = {
-            query: `
-                query($cursor: String) {
-                    viewer {
-                        repositories(
-                            first: 100,
-                            after: $cursor,
-                            ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
-                        ) {
-                            pageInfo {
-                                hasNextPage
-                                endCursor
-                            }
-                            nodes {
-                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
-                                    edges {
-                                        size
-                                        node {
-                                            name
-                                            color
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            `.replace(/\s+/g, ' '),
-            variables: { cursor },
-        };
+    while (hasNextPage) {
+        const response: AxiosResponse<RepoLanguagesResponse> =
+            await axios.post<RepoLanguagesResponse>(
+                URL,
+                { query: repoLanguagesQuery, variables: { cursor } },
+                { headers },
+            );
 
-        const response = await axios.post<{
-            data?: {
-                viewer: {
-                    repositories: {
-                        pageInfo: {
-                            hasNextPage: boolean;
-                            endCursor: string | null;
-                        };
-                        nodes: Array<{
-                            languages: {
-                                edges: Array<{
-                                    size: number;
-                                    node: {
-                                        name: string;
-                                        color: string | null;
-                                    };
-                                }>;
-                            };
-                        }>;
-                    };
-                };
-            };
-        }>(URL, request, { headers });
-
-        const repos = response.data.data?.viewer.repositories;
+        const repos: RepoLanguagesPage | undefined =
+            response.data.data?.viewer.repositories;
         if (!repos) break;
 
         for (const repo of repos.nodes) {
@@ -386,10 +386,9 @@ export const fetchRepoLanguages = async (
             }
         }
 
-        cursor = repos.pageInfo.hasNextPage
-            ? repos.pageInfo.endCursor
-            : null;
-    } while (cursor !== null);
+        hasNextPage = repos.pageInfo.hasNextPage;
+        cursor = repos.pageInfo.endCursor;
+    }
 
     return results;
 };
