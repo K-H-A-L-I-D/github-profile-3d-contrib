@@ -296,7 +296,102 @@ export const fetchAllYearsLanguages = async (
                     .totalContributions;
         }
     }
-    return { languages: allRepos, totalContributions };
+    return { totalContributions };
+};
+
+/**
+ * Fetch language byte counts across all repos the viewer owns, collaborates
+ * on, or is an org member of. Returns data shaped as CommitContributionsByRepository
+ * so the existing language aggregation pipeline in aggregate-user-info.ts can
+ * consume it without changes. Each language edge in each repo becomes one entry,
+ * with byte count as the contribution weight.
+ */
+export const fetchRepoLanguages = async (
+    token: string,
+): Promise<CommitContributionsByRepository> => {
+    const headers = { Authorization: `bearer ${token}` };
+    const results: CommitContributionsByRepository = [];
+    let cursor: string | null = null;
+
+    do {
+        const request = {
+            query: `
+                query($cursor: String) {
+                    viewer {
+                        repositories(
+                            first: 100,
+                            after: $cursor,
+                            ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+                        ) {
+                            pageInfo {
+                                hasNextPage
+                                endCursor
+                            }
+                            nodes {
+                                languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                    edges {
+                                        size
+                                        node {
+                                            name
+                                            color
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            `.replace(/\s+/g, ' '),
+            variables: { cursor },
+        };
+
+        const response = await axios.post<{
+            data?: {
+                viewer: {
+                    repositories: {
+                        pageInfo: {
+                            hasNextPage: boolean;
+                            endCursor: string | null;
+                        };
+                        nodes: Array<{
+                            languages: {
+                                edges: Array<{
+                                    size: number;
+                                    node: {
+                                        name: string;
+                                        color: string | null;
+                                    };
+                                }>;
+                            };
+                        }>;
+                    };
+                };
+            };
+        }>(URL, request, { headers });
+
+        const repos = response.data.data?.viewer.repositories;
+        if (!repos) break;
+
+        for (const repo of repos.nodes) {
+            for (const langEdge of repo.languages.edges) {
+                results.push({
+                    contributions: { totalCount: langEdge.size },
+                    repository: {
+                        primaryLanguage: {
+                            name: langEdge.node.name,
+                            color: langEdge.node.color,
+                        },
+                    },
+                });
+            }
+        }
+
+        cursor = repos.pageInfo.hasNextPage
+            ? repos.pageInfo.endCursor
+            : null;
+    } while (cursor !== null);
+
+    return results;
 };
 
 /** Fetch data from GitHub GraphQL */

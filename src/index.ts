@@ -42,8 +42,9 @@ export const main = async (): Promise<void> => {
             : await client.fetchData(token, userName, maxRepos, year);
 
         if (allTimeLangs && !allTime && response.data) {
-            const { languages, totalContributions } =
+            const { totalContributions } =
                 await client.fetchAllYearsLanguages(token, userName);
+            const languages = await client.fetchRepoLanguages(token);
             response.data.viewer.contributionsCollection.commitContributionsByRepository =
                 languages;
             response.data.viewer.contributionsCollection.contributionCalendar.totalContributions =
